@@ -1,0 +1,35 @@
+name: jq2765 Linux Valgrind validation
+on:
+  push:
+    branches: [validation/jq2765-linux-valgrind]
+permissions:
+  contents: read
+jobs:
+  validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 1da55c8378b630644029e75d36547412d4549f9c
+          submodules: true
+          persist-credentials: false
+      - name: Install build and memory-check tools
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool bison flex valgrind
+      - name: Build exact source
+        run: |
+          autoreconf -i
+          ./configure --disable-docs --with-oniguruma=builtin --disable-shared
+          make -j2
+      - name: Full native test suite
+        run: make check VERBOSE=yes
+      - name: Run new failure metatests under Valgrind
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          text = Path('tests/shtest').read_text()
+          block = text.split('## Test that --run-tests reports failures (#2765)\n', 1)[1].split('## Test JSON sequence support\n', 1)[0]
+          header = 'set -eu\nd=$(mktemp -d)\ntrap \'rm -rf "$d"\' EXIT\nVALGRIND=\'valgrind --error-exitcode=1 --leak-check=full\'\nQ=-q\nJQ="$1"\n'
+          Path('/tmp/jq2765-focused.sh').write_text(header + block)
+          PYTHON
+          sh /tmp/jq2765-focused.sh "$PWD/jq"
